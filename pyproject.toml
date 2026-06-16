@@ -1,0 +1,24 @@
+[project]
+name = "tokenlens"
+version = "0.1.0"
+description = "See where your coding agent's tokens and dollars went."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "click>=8.1",
+    "rich>=13.7",
+]
+
+[project.scripts]
+tokenlens = "tokenlens.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["tokenlens*"]
+
+[tool.setuptools.package-data]
+tokenlens = ["pricing.toml"]

@@ -1,0 +1,36 @@
+# USD per million tokens. Edit freely to match your actual contract/tier —
+# these are sensible defaults, not guaranteed current. Check
+# https://www.anthropic.com/pricing before trusting a number for a real
+# invoice. Cache writes are split by TTL because Anthropic prices them
+# differently (1h cache writes cost more than 5m writes); cache reads are
+# the same low rate regardless of TTL.
+
+[models."claude-opus-4-8"]
+input = 15.0
+output = 75.0
+cache_write_5m = 18.75
+cache_write_1h = 30.0
+cache_read = 1.5
+
+[models."claude-sonnet-4-6"]
+input = 3.0
+output = 15.0
+cache_write_5m = 3.75
+cache_write_1h = 6.0
+cache_read = 0.3
+
+[models."claude-haiku-4-5"]
+input = 1.0
+output = 5.0
+cache_write_5m = 1.25
+cache_write_1h = 2.0
+cache_read = 0.1
+
+# Used for any model name that doesn't match an entry above (after stripping
+# a trailing -YYYYMMDD date suffix and trying a prefix match).
+[default]
+input = 3.0
+output = 15.0
+cache_write_5m = 3.75
+cache_write_1h = 6.0
+cache_read = 0.3
