@@ -13,6 +13,7 @@ from rich.table import Table
 from tokenlens.pricing import load_pricing, turn_cost
 from tokenlens.report import render_report
 from tokenlens.transcripts import Session, humanize, load_sessions
+from tokenlens.ui import open_dashboard, render_html
 from tokenlens.waste import (
     DEFAULT_VERBOSE_THRESHOLD_CHARS,
     analyze_session_waste,
@@ -175,6 +176,40 @@ def waste(since: str, session_id: str | None, verbose_threshold: int):
         console.print()
 
     console.print(f"[bold]Biggest lever:[/bold] {biggest_lever(merged, total_input_tokens)}")
+
+
+@main.command()
+@click.option("--since", default="7d", help="Look back window, e.g. 7d or 24h.")
+@click.option("--session", "session_id", default=None, help="Restrict to one session id.")
+@click.option("--out", "out_path", default=None, type=click.Path(dir_okay=False), help="Save HTML to this file (also opens in browser).")
+def ui(since: str, session_id: str | None, out_path: str | None):
+    """Open an HTML dashboard in your browser."""
+    cutoff = parse_since(since) if not session_id else None
+    sessions = load_sessions(since=cutoff, session_id=session_id)
+    if not sessions:
+        console.print("No sessions found for that window.")
+        return
+
+    pricing = load_pricing()
+    summaries = summarize(sessions, pricing)
+    per_file = [analyze_session_waste(s) for s in sessions]
+    merged = merge_waste(per_file)
+    total_input_tokens = sum(
+        t.input_tokens + t.cache_read + t.cache_write for s in sessions for t in s.turns
+    )
+    window_label = f"session {session_id}" if session_id else f"last {since}"
+
+    content = render_html(
+        summaries=summaries,
+        categories=merged,
+        total_input_tokens=total_input_tokens,
+        total_cost=sum(s.cost for s in summaries),
+        total_tokens=sum(s.total_tokens for s in summaries),
+        window_label=window_label,
+    )
+    from pathlib import Path as _Path
+    path = open_dashboard(content, _Path(out_path) if out_path else None)
+    console.print(f"Opened {path}")
 
 
 @main.command()
