@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
@@ -123,6 +123,8 @@ def load_session(path: Path, is_subagent: bool) -> Session:
             kind = obj.get("type")
             ts_raw = obj.get("timestamp")
             ts = datetime.fromisoformat(ts_raw) if ts_raw else None
+            if ts is not None and ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
 
             if kind == "assistant":
                 msg = obj.get("message") or {}

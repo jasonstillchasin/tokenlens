@@ -1,6 +1,7 @@
 """Render a self-contained HTML dashboard and open it in the default browser."""
 from __future__ import annotations
 
+import atexit
 import html
 import webbrowser
 from pathlib import Path
@@ -26,14 +27,18 @@ def _h(s: object) -> str:
 def _waste_rows(categories: dict[str, WasteCategory], total_input_tokens: int) -> str:
     ranked = sorted(categories.values(), key=lambda c: c.tokens, reverse=True)
     rows = []
+    has_overlap = False
     for cat in ranked:
         share = (cat.tokens / total_input_tokens * 100) if total_input_tokens else 0
+        if share > 100:
+            has_overlap = True
         color = _CAT_COLORS.get(cat.key, "#58a6ff")
         bar_width = min(share, 100)
-        examples_html = ""
-        for ex in cat.top_examples(3):
-            examples_html += f'<div class="example">• {_h(ex)}</div>'
-        if not cat.examples:
+        if cat.examples:
+            examples_html = "".join(
+                f'<div class="example">• {_h(ex)}</div>' for ex in cat.top_examples(3)
+            )
+        else:
             examples_html = '<div class="example muted">(none found)</div>'
         rows.append(f"""
         <div class="waste-row">
@@ -48,21 +53,26 @@ def _waste_rows(categories: dict[str, WasteCategory], total_input_tokens: int) -
           <div class="examples">{examples_html}</div>
           <div class="suggestion">→ {_h(cat.suggestion)}</div>
         </div>""")
-    return "\n".join(rows)
+    overlap_note = (
+        '<p class="overlap-note">* Percentages can exceed 100 — some tokens appear in multiple categories.</p>'
+        if has_overlap else ""
+    )
+    return "\n".join(rows) + overlap_note
 
 
 def _session_rows(summaries: list) -> str:
     rows = []
     for s in summaries:
         date_str = s.start.strftime("%Y-%m-%d") if s.start else "—"
+        data_date = s.start.isoformat() if s.start else ""
         rows.append(f"""
         <tr>
-          <td class="mono muted">{_h(s.id[:12])}</td>
-          <td>{_h(s.project)}</td>
-          <td class="right">{s.turns:,}</td>
-          <td class="right">{humanize(s.total_tokens)}</td>
-          <td class="right mono">{_h(date_str)}</td>
-          <td class="right cost">${s.cost:,.4f}</td>
+          <td class="mono muted" data-val="{_h(s.id[:12])}">{_h(s.id[:12])}</td>
+          <td data-val="{_h(s.project)}">{_h(s.project)}</td>
+          <td class="right" data-val="{s.turns}">{s.turns:,}</td>
+          <td class="right" data-val="{s.total_tokens}">{humanize(s.total_tokens)}</td>
+          <td class="right mono" data-val="{_h(data_date)}">{_h(date_str)}</td>
+          <td class="right cost" data-val="{s.cost}">${s.cost:,.4f}</td>
         </tr>""")
     return "\n".join(rows)
 
@@ -150,6 +160,9 @@ def render_html(
   .muted {{ color: var(--muted); }}
   .cost {{ font-weight: 600; color: var(--green); }}
 
+  /* Overlap note */
+  .overlap-note {{ font-size: 11px; color: var(--muted); margin-top: 12px; }}
+
   /* Footer */
   .footer {{ text-align: center; color: var(--muted); font-size: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }}
 </style>
@@ -216,14 +229,15 @@ def render_html(
   var sortCol = 5, sortAsc = false;
 
   function cellVal(row, col) {{
-    var text = row.cells[col].textContent.trim();
-    var n = parseFloat(text.replace(/[$,KMB]/g, ''));
-    if (!isNaN(n)) {{
-      if (text.includes('K')) n *= 1e3;
-      if (text.includes('M')) n *= 1e6;
-      if (text.includes('B')) n *= 1e9;
-      return n;
-    }}
+    var v = row.cells[col].dataset.val;
+    if (v === undefined || v === '') return '';
+    var n = parseFloat(v);
+    if (!isNaN(n)) return n;
+    var text = v;
+    if (text.includes('K')) {{ n = parseFloat(text) * 1e3; }}
+    else if (text.includes('M')) {{ n = parseFloat(text) * 1e6; }}
+    else if (text.includes('B')) {{ n = parseFloat(text) * 1e9; }}
+    if (!isNaN(n)) return n;
     return text.toLowerCase();
   }}
 
@@ -262,8 +276,14 @@ def open_dashboard(html_content: str, out_path: Path | None = None) -> Path:
         path = out_path
     else:
         tmp = NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8")
-        tmp.write(html_content)
-        tmp.close()
+        try:
+            tmp.write(html_content)
+            tmp.close()
+        except Exception:
+            tmp.close()
+            Path(tmp.name).unlink(missing_ok=True)
+            raise
         path = Path(tmp.name)
-    webbrowser.open(f"file://{path.resolve()}")
+        atexit.register(lambda p=path: p.unlink(missing_ok=True))
+    webbrowser.open(path.resolve().as_uri())
     return path

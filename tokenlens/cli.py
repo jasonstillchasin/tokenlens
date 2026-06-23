@@ -56,6 +56,10 @@ class SessionSummary:
         return self.fresh_input + self.cache_read + self.cache_write + self.output
 
 
+def _total_input_tokens(sessions: list[Session]) -> int:
+    return sum(t.context_size for s in sessions for t in s.turns)
+
+
 def summarize(sessions: list[Session], pricing: dict) -> list[SessionSummary]:
     by_id: dict[str, list[Session]] = defaultdict(list)
     for s in sessions:
@@ -160,9 +164,7 @@ def waste(since: str, session_id: str | None, verbose_threshold: int):
 
     per_file = [analyze_session_waste(s, verbose_threshold) for s in sessions]
     merged = merge_waste(per_file)
-    total_input_tokens = sum(
-        t.input_tokens + t.cache_read + t.cache_write for s in sessions for t in s.turns
-    )
+    total_input_tokens = _total_input_tokens(sessions)
 
     ranked = sorted(merged.values(), key=lambda c: c.tokens, reverse=True)
     console.print()
@@ -182,7 +184,12 @@ def waste(since: str, session_id: str | None, verbose_threshold: int):
 @click.option("--since", default="7d", help="Look back window, e.g. 7d or 24h.")
 @click.option("--session", "session_id", default=None, help="Restrict to one session id.")
 @click.option("--out", "out_path", default=None, type=click.Path(dir_okay=False), help="Save HTML to this file (also opens in browser).")
-def ui(since: str, session_id: str | None, out_path: str | None):
+@click.option(
+    "--verbose-threshold",
+    default=DEFAULT_VERBOSE_THRESHOLD_CHARS,
+    help="Tool result size (chars) above which it counts as verbose output.",
+)
+def ui(since: str, session_id: str | None, out_path: str | None, verbose_threshold: int):
     """Open an HTML dashboard in your browser."""
     cutoff = parse_since(since) if not session_id else None
     sessions = load_sessions(since=cutoff, session_id=session_id)
@@ -192,11 +199,9 @@ def ui(since: str, session_id: str | None, out_path: str | None):
 
     pricing = load_pricing()
     summaries = summarize(sessions, pricing)
-    per_file = [analyze_session_waste(s) for s in sessions]
+    per_file = [analyze_session_waste(s, verbose_threshold) for s in sessions]
     merged = merge_waste(per_file)
-    total_input_tokens = sum(
-        t.input_tokens + t.cache_read + t.cache_write for s in sessions for t in s.turns
-    )
+    total_input_tokens = _total_input_tokens(sessions)
     window_label = f"session {session_id}" if session_id else f"last {since}"
 
     content = render_html(
@@ -207,8 +212,7 @@ def ui(since: str, session_id: str | None, out_path: str | None):
         total_tokens=sum(s.total_tokens for s in summaries),
         window_label=window_label,
     )
-    from pathlib import Path as _Path
-    path = open_dashboard(content, _Path(out_path) if out_path else None)
+    path = open_dashboard(content, Path(out_path) if out_path else None)
     console.print(f"Opened {path}")
 
 
@@ -228,9 +232,7 @@ def report(since: str, session_id: str | None, out_path: str):
     summaries = summarize(sessions, pricing)
     per_file = [analyze_session_waste(s) for s in sessions]
     merged = merge_waste(per_file)
-    total_input_tokens = sum(
-        t.input_tokens + t.cache_read + t.cache_write for s in sessions for t in s.turns
-    )
+    total_input_tokens = _total_input_tokens(sessions)
     window_label = f"session {session_id}" if session_id else f"last {since}"
 
     markdown = render_report(
